@@ -1,4 +1,3 @@
-# .github/workflows/ci-cd.yml
 name: CI/CD Pipeline
 
 on:
@@ -6,175 +5,98 @@ on:
     branches: 
       - "main"
       - "develop"
-    tags:
-      - "v*.*.*"          # Dispara quando criar/mover tags no formato semver (ex: v1.2.3)
   pull_request:
     branches: 
       - "main"
       - "develop"
-  #schedule:
-    #- cron: "0 0 * * 0"   # Exemplo: roda todo domingo à meia-noite
-  workflow_dispatch:      # Permite disparo manual pelo GitHub
+  workflow_dispatch:      # Permite disparo manual, se desejar
 
 jobs:
-  ##################################################################
-  # LINT (job roda em paralelo ao SAST)
-  ##################################################################
+  # Exemplo de jobs de LINT, SAST e TEST (podem ser paralelos ou em sequência)
   lint:
-    name: Lint
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
-
-      - name: Instalar dependências
+      - uses: actions/checkout@v3
+      - name: Install
         run: npm install
-
-      - name: Rodar Lint
+      - name: Lint
         run: npm run lint
-        # Exemplo de correção automática: 
-        # run: npm run lint -- --fix
 
-  ##################################################################
-  # SAST (Security Analysis) - roda em paralelo ao LINT
-  ##################################################################
   security:
-    name: SAST Analysis
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: SAST
+        run: npm run sast
 
-      - name: Análise Estática de Segurança
-        # Ajuste para a ferramenta que você utiliza (por exemplo: npm run sast, bandit, etc.)
-        run: |
-          echo "Rodando SAST..."
-          # Exemplo: npm run sast
-          # Exemplo: ./bin/sast-scan
-
-  ##################################################################
-  # TEST - depende de LINT e SAST
-  ##################################################################
   test:
-    name: Test
     runs-on: ubuntu-latest
     needs: 
       - lint
       - security
-    
-    # Exemplo de matriz em Node.js, rode em múltiplas versões
-    strategy:
-      matrix:
-        node-version: [14, 16, 18]
-
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Instalar dependências
+      - uses: actions/checkout@v3
+      - name: Install
         run: npm install
-
-      - name: Executar testes unitários
+      - name: Test
         run: npm test
 
-  ##################################################################
-  # BUILD - depende de TEST
-  ##################################################################
   build:
-    name: Build & Release
     runs-on: ubuntu-latest
     needs: test
-
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
-
-      - name: Instalar dependências
+      - uses: actions/checkout@v3
+      - name: Install
         run: npm install
-
-      - name: Build da aplicação
+      - name: Build
         run: npm run build
-        # Exemplo para TypeScript ou Webpack: 
-        # run: npm run build -- --prod
+      # Exemplo: npm run release ou semantic-release
 
-      - name: Versão (Exemplo de uso semver)
-        # Ajuste para a sua abordagem (ex: semantic-release, standard-version etc.)
-        run: |
-          echo "Gerando versão semântica (opcional) ..."
-          # npx semantic-release ou npm run release etc.
-
-  ##################################################################
-  # DEPLOY STAGING
-  # Executa se estiver na branch develop
-  ##################################################################
+  ###################################################################
+  # DEPLOY PARA STAGING
+  # -> Executado automaticamente quando fizer push na branch 'develop'
+  ###################################################################
   deploy_staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: build
-
-    # Define environment para staging (pode ter segredos específicos)
+    if: github.ref == 'refs/heads/develop'
     environment:
       name: staging
       url: https://staging.example.com
 
-    # Só executa se for a branch 'develop'
-    if: github.ref == 'refs/heads/develop'
-
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
-
-      - name: Deploy para Staging
+      - uses: actions/checkout@v3
+      - name: Deploy to Staging
         env:
-          # Exemplo de uso de secret
-          DEPLOY_API_KEY: ${{ secrets.STAGING_DEPLOY_API_KEY }}
+          STAGING_KEY: ${{ secrets.STAGING_DEPLOY_KEY }}
         run: |
-          echo "Realizando deploy em STAGING..."
-          # Exemplo: 
-          # kubectl apply -f k8s/staging.yaml --token $DEPLOY_API_KEY
-          # ou 
-          # npm run deploy-staging
-          # Ajuste conforme sua infra
+          echo "Fazendo deploy em STAGING..."
+          # Exemplo de comando:
+          # npm run deploy-staging --key $STAGING_KEY
 
-  ##################################################################
-  # DEPLOY PRODUÇÃO
-  # Executa se for branch 'main' ou se for tag semver (refs/tags/vX.X.X)
-  ##################################################################
+  ###################################################################
+  # DEPLOY PARA PRODUÇÃO
+  # -> Exige aprovação manual configurada no "environment: production"
+  # -> Dispara automaticamente em push na branch 'main'
+  ###################################################################
   deploy_production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build
-
-    # Define environment "production", com concurrency para evitar conflitos
+    if: github.ref == 'refs/heads/main'
     environment:
       name: production
       url: https://app.example.com
 
     concurrency: production-deploy
 
-    # Filtra branch main OU tag semver (ex: v1.2.3)
-    if: >
-      github.ref == 'refs/heads/main' ||
-      startsWith(github.ref, 'refs/tags/v')
-
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
-
-      - name: Deploy para Produção
+      - uses: actions/checkout@v3
+      - name: Deploy to Production
         env:
-          DEPLOY_API_KEY: ${{ secrets.PROD_DEPLOY_API_KEY }}
-          APP_ENV: "production"
+          PROD_KEY: ${{ secrets.PROD_DEPLOY_KEY }}
         run: |
-          echo "Realizando deploy em PRODUÇÃO..."
-          # Exemplo de comando de deploy:
-          # helm upgrade --install myapp chart/ --set apiKey=$DEPLOY_API_KEY
-          # ou 
-          # npm run deploy-production
+          echo "Fazendo deploy em PRODUÇÃO..."
+          # Exemplo de comando:
+          # npm run deploy-production --key $PROD_KEY
